@@ -15,6 +15,8 @@ optimisation config options. If you are experience low FPS, I encourage you to e
 ![alt text](https://i.imgur.com/SUVFr2g.png "Screenshot")
 
 # Changelog
+    - Version 1.1.2 -
+        Fixed major bug - mode flickers when playing with others
     - Version 1.1.1 -
         Fixed bug where if auto mode was enabled, the player could not manually disable the mod.
     - Version 1.1.0
