@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace BuildingHealthMode
 {
-    [BepInPlugin("projjm.buildingHealthMode", "Building Health Mode", "1.0.0")]
+    [BepInPlugin("projjm.buildingHealthMode", "Building Health Mode", "1.1.0")]
     [BepInProcess("valheim.exe")]
     public class BuildingHealthMode : BaseUnityPlugin
     {
@@ -20,6 +20,7 @@ namespace BuildingHealthMode
             public WearNTear nextData = null;
         }
 
+        private static ConfigEntry<bool> activateOnHammerRepairMode;
         private static ConfigEntry<KeyCode> ToggleBuildingHealthModeKey;
         private static ConfigEntry<bool> Asynchronous;
         private static ConfigEntry<int> AsyncObjectPerFrame;
@@ -29,7 +30,6 @@ namespace BuildingHealthMode
         private static ConfigEntry<float> ModUpdateInterval;
         private static ConfigEntry<Color> FullHealthColor;
         private static ConfigEntry<Color> ZeroHealthColor;
-
 
         private readonly Harmony Harmony = new Harmony("projjm.buildingHealthMode");
         private static bool _modEnabled = false;
@@ -42,7 +42,7 @@ namespace BuildingHealthMode
 
         private float _timeSinceLastUpdate = 0f;
 
-        private bool _needsFirstUpdate = false;
+        private static bool _needsFirstUpdate = false;
         private static bool isUpdatingAsync = false;
 
         private static int EmmissionID = Shader.PropertyToID("_EmissionColor");
@@ -61,8 +61,8 @@ namespace BuildingHealthMode
 
         private void BindConfigs()
         {
+            activateOnHammerRepairMode = Config.Bind<bool>("General", "activateOnHammerRepairMode", true, "Activate Building Health Mode automatically when using the hammer and repair mode is selected");
             ToggleBuildingHealthModeKey = Config.Bind<KeyCode>("Key Bindings", "toggleBuildingHealthModeKey", KeyCode.H, "The key to press to toggle Building Health Mode");
-
             MaxDistance = Config.Bind<float>("Highlighing", "maxDistance", 20, "The max distance for objects to be highlighted");
             FullHealthColor = Config.Bind<Color>("Colors", "fullHealthColor", Color.green, "The colour of an object when it is at full health");
             ZeroHealthColor = Config.Bind<Color>("Colors", "zeroHealthColor", Color.red, "The colour of an object when it is at zero health");
@@ -71,6 +71,7 @@ namespace BuildingHealthMode
             ModUpdateInterval = Config.Bind<float>("Optimization", "modUpdateInterval", 0.75f, "The interval (in seconds) between highlight checks on objects.");
             MaxCacheSize = Config.Bind<int>("Optimization", "maxCacheSize", 1500, "The max number of objects to cache. Increasing this value will improve FPS but consume more memory");
             CacheOverflowCleanupSize = Config.Bind<int>("Optimization", "cCacheOverflowCleanupSize", 200, "The number of objects to remove from the cache after exceeding the cache limit.");
+
         }
         private void ClearVars()
         {
@@ -123,7 +124,7 @@ namespace BuildingHealthMode
             }
         }
 
-        private void DisabledModHighlights()
+        private static void DisabledModHighlights()
         {
             HighlightedWears.ForEach(wear => wear.ResetHighlight());
             HighlightedWears.Clear();
@@ -157,7 +158,7 @@ namespace BuildingHealthMode
             {
                 UpdateDataCache(wearNTear);
                 if (ShouldHighlight(wearNTear, playerPos))
-                    Highlight(wearNTear);
+                    HighlightPiece(wearNTear);
             }
         }
 
@@ -183,7 +184,7 @@ namespace BuildingHealthMode
 
                 UpdateDataCache(wearNTear);
                 if (ShouldHighlight(wearNTear, playerPos))
-                    Highlight(wearNTear);
+                    HighlightPiece(wearNTear);
                 c++;
             }
 
@@ -217,6 +218,7 @@ namespace BuildingHealthMode
             float distance = Vector3.Distance(wearNTearPos, playerPos);
             float healthPercentage = wearNTear.GetHealthPercentage();
             float maxDistance = MaxDistance.Value;
+            float healthDiffMinimum = 5f;
 
             if (HighlightedWears.Contains(wearNTear))
             {
@@ -227,7 +229,8 @@ namespace BuildingHealthMode
                     return false;
                 }
 
-                if (WearsDataCache[wearNTear].healthPercentage != healthPercentage)
+                float healthDif = Mathf.Abs(WearsDataCache[wearNTear].healthPercentage - healthPercentage);
+                if (healthDif > healthDiffMinimum)
                     return true;
                 else
                     return false;
@@ -239,20 +242,18 @@ namespace BuildingHealthMode
                 return false;
         }
 
-        private static void Highlight(WearNTear wearNTear) => Highlight(wearNTear, wearNTear.GetHealthPercentage());
+        private static void HighlightPiece(WearNTear wearNTear) => HighlightPiece(wearNTear, wearNTear.GetHealthPercentage());
 
-        private static void Highlight(WearNTear wearNTear, float healthPercentage)
+        private static void HighlightPiece(WearNTear wearNTear, float healthPercentage)
         {
-            //Debug.Log("Highlighting");
             if (wearNTear.m_oldMaterials == null || wearNTear.m_oldMaterials.Count == 0)
-                wearNTear.Highlight();
+                StoreOldMaterials(wearNTear);
 
             if (!HighlightedWears.Contains(wearNTear))
                 HighlightedWears.Add(wearNTear);
 
             WearsDataCache[wearNTear].healthPercentage = healthPercentage;
 
-            //Debug.Log("Changed Color");
             Color color = Color.Lerp(ZeroHealthColor.Value, FullHealthColor.Value, healthPercentage);
             foreach (WearNTear.OldMeshData oldMaterial in wearNTear.m_oldMaterials)
             {
@@ -265,6 +266,31 @@ namespace BuildingHealthMode
                         obj.color = color;
                     }
                 }
+            }
+        }
+
+        private static void StoreOldMaterials(WearNTear wearNTear)
+        {
+            wearNTear.m_oldMaterials = new List<WearNTear.OldMeshData>();
+            foreach (Renderer highlightRenderer in wearNTear.GetHighlightRenderers())
+            {
+                WearNTear.OldMeshData item = default(WearNTear.OldMeshData);
+                item.m_materials = highlightRenderer.sharedMaterials;
+                item.m_color = new Color[item.m_materials.Length];
+                item.m_emissiveColor = new Color[item.m_materials.Length];
+                for (int i = 0; i < item.m_materials.Length; i++)
+                {
+                    if (item.m_materials[i].HasProperty("_Color"))
+                    {
+                        item.m_color[i] = item.m_materials[i].GetColor("_Color");
+                    }
+                    if (item.m_materials[i].HasProperty("_EmissionColor"))
+                    {
+                        item.m_emissiveColor[i] = item.m_materials[i].GetColor("_EmissionColor");
+                    }
+                }
+                item.m_renderer = highlightRenderer;
+                wearNTear.m_oldMaterials.Add(item);
             }
         }
 
@@ -293,7 +319,7 @@ namespace BuildingHealthMode
                     if (HighlightedWears.Contains(__instance))
                     {
                         UpdateDataCache(__instance);
-                        Highlight(__instance);
+                        HighlightPiece(__instance);
                         return false;
                     }
                     else
@@ -307,6 +333,103 @@ namespace BuildingHealthMode
                 }
             }
         }
+
+        [HarmonyPatch(typeof(Player), nameof(Player.Update))]
+        public class EnableOnHammerRepair
+        {
+            public static void Postfix(Player __instance)
+            {
+                if (!activateOnHammerRepairMode.Value)
+                    return;
+
+                Piece selected = __instance.GetSelectedPiece();
+                bool inRepairMode = (selected != null && __instance.GetSelectedPiece().m_repairPiece);
+                if (!_modEnabled)
+                {
+                    if (inRepairMode)
+                    {
+                        _modEnabled = true;
+                        _needsFirstUpdate = true;
+                    }
+                }
+                else
+                {
+                    if (!inRepairMode)
+                    {
+                        _modEnabled = false;
+                        if (!_modEnabled && HighlightedWears.Count != 0)
+                            DisabledModHighlights();
+                    }
+                }
+            }
+
+        }
+
+
+        [HarmonyPatch(typeof(WearNTear), nameof(WearNTear.Highlight))]
+        class HighlightWhenOnFix
+        {
+            public static bool Prefix(WearNTear __instance)
+            {
+                if (__instance.m_oldMaterials == null)
+                {
+                    __instance.m_oldMaterials = new List<WearNTear.OldMeshData>();
+                    foreach (Renderer highlightRenderer in __instance.GetHighlightRenderers())
+                    {
+                        WearNTear.OldMeshData item = default(WearNTear.OldMeshData);
+                        item.m_materials = highlightRenderer.sharedMaterials;
+                        item.m_color = new Color[item.m_materials.Length];
+                        item.m_emissiveColor = new Color[item.m_materials.Length];
+                        for (int i = 0; i < item.m_materials.Length; i++)
+                        {
+                            if (item.m_materials[i].HasProperty("_Color"))
+                            {
+                                item.m_color[i] = item.m_materials[i].GetColor("_Color");
+                            }
+                            if (item.m_materials[i].HasProperty("_EmissionColor"))
+                            {
+                                item.m_emissiveColor[i] = item.m_materials[i].GetColor("_EmissionColor");
+                            }
+                        }
+                        item.m_renderer = highlightRenderer;
+                        __instance.m_oldMaterials.Add(item);
+                    }
+                }
+                Color color = new Color(0.6f, 0.8f, 1f);
+
+                float supportColorValue;
+
+                if (!_modEnabled)
+                {
+                    supportColorValue = __instance.GetSupportColorValue();
+                    if (supportColorValue >= 0f)
+                    {
+                        color = Color.Lerp(new Color(1f, 0f, 0f), new Color(0f, 1f, 0f), supportColorValue);
+                        Color.RGBToHSV(color, out var H, out var S, out var V);
+                        S = Mathf.Lerp(1f, 0.5f, supportColorValue);
+                        V = Mathf.Lerp(1.2f, 0.9f, supportColorValue);
+                        color = Color.HSVToRGB(H, S, V);
+                    }
+                }
+                
+                foreach (WearNTear.OldMeshData oldMaterial in __instance.m_oldMaterials)
+                {
+                    if ((bool)oldMaterial.m_renderer)
+                    {
+                        Material[] materials = oldMaterial.m_renderer.materials;
+                        foreach (Material obj in materials)
+                        {
+                            obj.SetColor("_EmissionColor", color * 0.4f);
+                            obj.color = color;
+                        }
+                    }
+                }
+                __instance.CancelInvoke("ResetHighlight");
+                __instance.Invoke("ResetHighlight", 0.2f);
+                return false;
+            }
+        }
+
 
     }
 }
