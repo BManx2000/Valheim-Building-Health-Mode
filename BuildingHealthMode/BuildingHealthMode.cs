@@ -44,7 +44,8 @@ namespace BuildingHealthMode
 
         private static bool _needsFirstUpdate = false;
         private static bool isUpdatingAsync = false;
-
+        private static bool isUsingAutomaticMode = false;
+        private static bool wasForceDisabledOnAuto = false;
         private static int EmmissionID = Shader.PropertyToID("_EmissionColor");
 
         private void Awake()
@@ -117,10 +118,31 @@ namespace BuildingHealthMode
                 _modEnabled = !_modEnabled;
 
                 if (_modEnabled)
+                {
                     _needsFirstUpdate = true;
+                    if (activateOnHammerRepairMode.Value)
+                    {
+                        var t = Player.m_localPlayer.GetSelectedPiece();
+                        if (t != null && t.m_repairPiece)
+                            isUsingAutomaticMode = true;
+                        else
+                            isUsingAutomaticMode = false;
+                    }
+                    else
+                        isUsingAutomaticMode = false;
+                }
 
-                if (!_modEnabled && HighlightedWears.Count != 0)
-                    DisabledModHighlights();
+
+                if (!_modEnabled)
+                {
+                    if (HighlightedWears.Count != 0)
+                        DisabledModHighlights();
+
+                    if (isUsingAutomaticMode)
+                        wasForceDisabledOnAuto = true;
+                    else
+                        wasForceDisabledOnAuto = false;
+                }
             }
         }
 
@@ -346,17 +368,23 @@ namespace BuildingHealthMode
                 bool inRepairMode = (selected != null && __instance.GetSelectedPiece().m_repairPiece);
                 if (!_modEnabled)
                 {
-                    if (inRepairMode)
+                    if (inRepairMode && !wasForceDisabledOnAuto)
                     {
                         _modEnabled = true;
                         _needsFirstUpdate = true;
+                        isUsingAutomaticMode = true;
                     }
+
+                    if (!inRepairMode && wasForceDisabledOnAuto)
+                        wasForceDisabledOnAuto = false;
                 }
                 else
                 {
-                    if (!inRepairMode)
+                    if (!inRepairMode && isUsingAutomaticMode)
                     {
                         _modEnabled = false;
+                        isUsingAutomaticMode = false;
+                        wasForceDisabledOnAuto = false;
                         if (!_modEnabled && HighlightedWears.Count != 0)
                             DisabledModHighlights();
                     }
