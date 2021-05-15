@@ -361,6 +361,9 @@ namespace BuildingHealthMode
         {
             public static void Postfix(Player __instance)
             {
+                if (__instance != Player.m_localPlayer)
+                    return;
+
                 if (!activateOnHammerRepairMode.Value)
                     return;
 
