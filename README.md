@@ -12,5 +12,9 @@ health. Due to the somewhat intensive nature of this mod, some users may experie
 optimisation config options. If you are experience low FPS, I encourage you to experiment with these options and potentially lower some of the values, such as Max Distance.
  
 # Changelog
+    - Version 1.1.0 -
+        Added option to enable automatically when hammer is on repair mode (enabled by default).
+        Force peices to highlight blue when mod is enabled.
+        Fixed old materials being reset every frame.
     - Version 1.0.0 -
         Initial Release. No bugs known.
