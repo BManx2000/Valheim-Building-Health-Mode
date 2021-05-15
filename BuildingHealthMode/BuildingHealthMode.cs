@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace BuildingHealthMode
 {
-    [BepInPlugin("projjm.buildingHealthMode", "Building Health Mode", "1.1.1")]
+    [BepInPlugin("projjm.buildingHealthMode", "Building Health Mode", "1.1.2")]
     [BepInProcess("valheim.exe")]
     public class BuildingHealthMode : BaseUnityPlugin
     {
