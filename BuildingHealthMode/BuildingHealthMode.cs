@@ -35,7 +35,7 @@ namespace BuildingHealthMode
         private readonly Harmony Harmony = new Harmony("projjm.buildingHealthMode");
         private static bool _modEnabled = false;
 
-        private static List<WearNTear> HighlightedWears = new List<WearNTear>();
+        private static HashSet<WearNTear> HighlightedWears = new HashSet<WearNTear>();
         private static Dictionary<WearNTear, WearsData> WearsDataCache = new Dictionary<WearNTear, WearsData>();
         private static WearNTear wearToIgnore; // Prevent infinite recursion because of harmony patch
 
@@ -151,7 +151,10 @@ namespace BuildingHealthMode
 
         private static void DisabledModHighlights()
         {
-            HighlightedWears.ForEach(wear => wear.ResetHighlight());
+            foreach (WearNTear wear in HighlightedWears)
+            {
+                wear.ResetHighlight();
+            }
             HighlightedWears.Clear();
         }
 
