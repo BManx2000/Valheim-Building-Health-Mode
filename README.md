@@ -15,6 +15,8 @@ optimisation config options. If you are experience low FPS, I encourage you to e
 ![alt text](https://i.imgur.com/SUVFr2g.png "Screenshot")
 
 # Changelog
+    - Version 1.2.1 -
+        Improved performance by replacing the list of highlighted objects with a HashSet.
     - Version 1.2.0 -
         Added option to control whether full health objects are highlighted (disabled by default because that's why I made this fork)
         Improved color interpolation, half dead objects are now bright yellow instead of brown.
