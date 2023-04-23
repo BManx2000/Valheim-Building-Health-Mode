@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace BuildingHealthMode
 {
-    [BepInPlugin("projjm.buildingHealthMode", "Building Health Mode", "1.1.2")]
+    [BepInPlugin("projjm.buildingHealthMode", "Building Health Mode", "1.2.0")]
     [BepInProcess("valheim.exe")]
     public class BuildingHealthMode : BaseUnityPlugin
     {
@@ -30,12 +30,14 @@ namespace BuildingHealthMode
         private static ConfigEntry<float> ModUpdateInterval;
         private static ConfigEntry<Color> FullHealthColor;
         private static ConfigEntry<Color> ZeroHealthColor;
+        private static ConfigEntry<bool> HighlightOnFullHealth;
 
         private readonly Harmony Harmony = new Harmony("projjm.buildingHealthMode");
         private static bool _modEnabled = false;
 
         private static List<WearNTear> HighlightedWears = new List<WearNTear>();
         private static Dictionary<WearNTear, WearsData> WearsDataCache = new Dictionary<WearNTear, WearsData>();
+        private static WearNTear wearToIgnore; // Prevent infinite recursion because of harmony patch
 
         private static WearsData lastAddedToCache;
         private static WearNTear firstElementCache;
@@ -67,6 +69,7 @@ namespace BuildingHealthMode
             MaxDistance = Config.Bind<float>("Highlighing", "maxDistance", 20, "The max distance for objects to be highlighted");
             FullHealthColor = Config.Bind<Color>("Colors", "fullHealthColor", Color.green, "The colour of an object when it is at full health");
             ZeroHealthColor = Config.Bind<Color>("Colors", "zeroHealthColor", Color.red, "The colour of an object when it is at zero health");
+            HighlightOnFullHealth = Config.Bind<bool>("Colors", "highlightOnFullHealth", false, "Highlight objects that are at full health.");
             Asynchronous = Config.Bind<bool>("Optimization", "asynchronous", true, "Should the highlighting be asynchronous [coroutine] (Recommended ON, disabling this will mean you are likely to freeze for a few seconds upon enabling the mod");
             AsyncObjectPerFrame = Config.Bind<int>("Optimization", "asyncObjectsPerFrame", 20, "The number of objects to be processed (highlighted) per frame when Asynchronous is set to true");
             ModUpdateInterval = Config.Bind<float>("Optimization", "modUpdateInterval", 0.75f, "The interval (in seconds) between highlight checks on objects.");
@@ -276,19 +279,61 @@ namespace BuildingHealthMode
 
             WearsDataCache[wearNTear].healthPercentage = healthPercentage;
 
-            Color color = Color.Lerp(ZeroHealthColor.Value, FullHealthColor.Value, healthPercentage);
-            foreach (WearNTear.OldMeshData oldMaterial in wearNTear.m_oldMaterials)
+            if (HighlightOnFullHealth.Value || (healthPercentage < 1))
             {
-                if ((bool)oldMaterial.m_renderer)
+                Color color = LerpHSV(ZeroHealthColor.Value, FullHealthColor.Value, healthPercentage);
+                
+                foreach (WearNTear.OldMeshData oldMaterial in wearNTear.m_oldMaterials)
                 {
-                    Material[] materials = oldMaterial.m_renderer.materials;
-                    foreach (Material obj in materials)
+                    if ((bool)oldMaterial.m_renderer)
                     {
-                        obj.SetColor(EmmissionID, color * 0.4f);
-                        obj.color = color;
+                        Material[] materials = oldMaterial.m_renderer.materials;
+                        foreach (Material obj in materials)
+                        {
+                            obj.SetColor(EmmissionID, color * 0.4f);
+                            obj.color = color;
+                        }
                     }
                 }
             }
+            else
+            {
+                wearToIgnore = wearNTear; // Prevent infinite recursion because of harmony patch
+                wearNTear.ResetHighlight();
+                wearToIgnore = null;
+            }
+        }
+
+        public static Color LerpHSV(Color a, Color b, float t)
+        {
+            Color.RGBToHSV(a, out float aH, out float aS, out float aV);
+            Color.RGBToHSV(b, out float bH, out float bS, out float bV);
+
+            // Hue interpolation
+            float h = 0;
+            float d = bH - aH;
+            if (aH > bH)
+            {
+                // Swap (a.h, b.h)
+                var h3 = bH;
+                bH = aH;
+                aH = h3;
+                d = -d;
+                t = 1 - t;
+            }
+            if (d > 0.5) // 180deg
+            {
+                aH = aH + 1; // 360deg
+                h = (aH + t * (bH - aH)) % 1; // 360deg
+            }
+            if (d <= 0.5) // 180deg
+            {
+                h = aH + t * d;
+            }
+            // Interpolates the rest
+            Color interpolated = Color.HSVToRGB(h, aS + t * (bS - aS), aV + t * (bV - aV));
+            interpolated.a = a.a + t * (b.a - a.a);
+            return interpolated;
         }
 
         private static void StoreOldMaterials(WearNTear wearNTear)
@@ -338,7 +383,7 @@ namespace BuildingHealthMode
             {
                 if (_modEnabled)
                 {
-                    if (HighlightedWears.Contains(__instance))
+                    if ((__instance != wearToIgnore) && HighlightedWears.Contains(__instance))
                     {
                         UpdateDataCache(__instance);
                         HighlightPiece(__instance);
